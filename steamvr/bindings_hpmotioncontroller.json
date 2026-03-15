@@ -1,0 +1,16 @@
+{
+  "controller_type": "hpmotioncontroller",
+  "name": "RawriisSTT - HP Reverb G2",
+  "description": "Default bindings",
+  "bindings": {
+    "/actions/main": {
+      "sources": [
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "button",
+          "inputs": { "click": { "output": "/actions/main/in/push_to_talk" } }
+        }
+      ]
+    }
+  }
+}

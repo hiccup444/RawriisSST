@@ -1,0 +1,16 @@
+{
+  "controller_type": "generic_controller",
+  "name": "RawriisSTT - Generic Controller",
+  "description": "Default bindings",
+  "bindings": {
+    "/actions/main": {
+      "sources": [
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "inputs": { "click": { "output": "/actions/main/in/push_to_talk" } }
+        }
+      ]
+    }
+  }
+}

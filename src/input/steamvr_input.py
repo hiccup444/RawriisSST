@@ -19,8 +19,6 @@ Thread model:
 from __future__ import annotations
 
 import logging
-import os
-import subprocess
 import sys
 import threading
 import time
@@ -42,15 +40,14 @@ ACT_REPEAT    = "/actions/main/in/repeat_tts"
 # ──────────────────────────────────────────────────── one-time registration ──
 
 def register_manifest(vrmanifest_path: str, action_manifest_path: str) -> None:
-    """Patch the vrmanifest with the absolute action_manifest_path, then register
-    with SteamVR via vrpathreg.
+    """Patch the vrmanifest with absolute paths for binary, icon, and action manifest.
 
     SteamVR's binding editor requires an absolute action_manifest_path; relative
-    paths cause "failed to load manifest" errors.  We rewrite the field in place
-    on every launch so the path stays correct even if the app is moved.
+    paths cause "failed to load manifest" errors.  We rewrite the fields in place
+    on every launch so paths stay correct even if the app is moved.
 
-    Safe to call on every launch — vrpathreg is idempotent.
-    Silently skipped if vrpathreg cannot be found.
+    Registration with SteamVR happens in _try_init() via addApplicationManifest(),
+    which works within the running session without needing vrpathreg.
     """
     _patch_action_manifest(action_manifest_path)
     import json as _json
@@ -97,30 +94,6 @@ def register_manifest(vrmanifest_path: str, action_manifest_path: str) -> None:
     except Exception as exc:
         logger.warning("Could not patch vrmanifest: %s", exc)
 
-    vrpathreg = _find_vrpathreg()
-    if not vrpathreg:
-        logger.debug("vrpathreg not found — skipping manifest registration")
-        return
-    try:
-        # Remove first to flush SteamVR's cached manifest, then re-add
-        subprocess.run([vrpathreg, "removemanifest", vrmanifest_path],
-                       capture_output=True, timeout=10)
-        result = subprocess.run(
-            [vrpathreg, "addmanifest", vrmanifest_path],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            logger.info("SteamVR manifest registered: %s", vrmanifest_path)
-        else:
-            logger.warning(
-                "vrpathreg addmanifest returned %d: %s",
-                result.returncode,
-                result.stderr.decode(errors="replace").strip(),
-            )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.warning("vrpathreg failed: %s", exc)
-
 
 def _patch_action_manifest(action_manifest_path: str) -> None:
     """Rewrite binding_url entries in actions.json to absolute paths.
@@ -148,43 +121,6 @@ def _patch_action_manifest(action_manifest_path: str) -> None:
             logger.info("Patched action manifest binding_url paths to absolute")
     except Exception as exc:
         logger.warning("Could not patch action manifest: %s", exc)
-
-
-def _find_vrpathreg() -> Optional[str]:
-    """Return the path to the vrpathreg binary, or None if not found."""
-    # 1. STEAMVR_RUNTIME environment variable
-    runtime_env = os.environ.get("STEAMVR_RUNTIME")
-    if runtime_env:
-        candidate = Path(runtime_env) / "bin" / ("vrpathreg.exe" if sys.platform == "win32" else "vrpathreg")
-        if candidate.exists():
-            return str(candidate)
-
-    # 2. Common Windows install locations
-    if sys.platform == "win32":
-        steam_paths = [
-            Path(r"C:\Program Files (x86)\Steam\steamapps\common\SteamVR\bin\win64\vrpathreg.exe"),
-            Path(r"C:\Program Files\Steam\steamapps\common\SteamVR\bin\win64\vrpathreg.exe"),
-        ]
-        # Also check PROGRAMFILES env
-        pf = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
-        steam_paths.append(Path(pf) / "Steam" / "steamapps" / "common" / "SteamVR" / "bin" / "win64" / "vrpathreg.exe")
-        for p in steam_paths:
-            if p.exists():
-                return str(p)
-
-    # 3. Linux: check ~/.steam/steam/steamapps/common/SteamVR
-    if sys.platform == "linux":
-        linux_candidates = [
-            Path.home() / ".steam" / "steam" / "steamapps" / "common" / "SteamVR" / "bin" / "vrpathreg.sh",
-            Path.home() / ".local" / "share" / "Steam" / "steamapps" / "common" / "SteamVR" / "bin" / "vrpathreg.sh",
-        ]
-        for p in linux_candidates:
-            if p.exists():
-                return str(p)
-
-    # 4. Fall back to PATH
-    import shutil
-    return shutil.which("vrpathreg")
 
 
 def _is_steamvr_running() -> bool:
@@ -328,6 +264,16 @@ class SteamVRInputManager:
             openvr.init(openvr.VRApplication_Background)
         except openvr.OpenVRError as exc:
             logger.debug("OpenVR init failed: %s %r", exc, exc)
+            return None
+
+        # Validate that the interfaces we need are accessible (catches version mismatches)
+        try:
+            _ = openvr.VRInput()
+            _ = openvr.VRSystem()
+            _ = openvr.VRApplications()
+        except openvr.OpenVRError as exc:
+            logger.warning("OpenVR interface validation failed: %s — aborting", exc)
+            openvr.shutdown()
             return None
 
         # Register our manifest directly in the running SteamVR session.
