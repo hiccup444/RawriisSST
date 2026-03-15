@@ -8,8 +8,8 @@ echo  RawriisSTT -- Windows .exe build
 echo ============================================================
 echo.
 
-:: Install build dependencies
-python -m pip install --quiet pyinstaller pillow openvr
+:: Install build dependencies (boto3 must be present so PyInstaller can bundle it)
+python -m pip install --quiet pyinstaller pillow openvr boto3
 if errorlevel 1 (
     echo ERROR: pip failed. Make sure Python is on your PATH.
     pause

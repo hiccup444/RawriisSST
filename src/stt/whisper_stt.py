@@ -33,7 +33,7 @@ def _find_python() -> str:
       1. pyvenv.cfg home (set by venv, points at the base Python directory)
       2. sys.base_exec_prefix  (base Python install, not the venv)
       3. sys.exec_prefix       (venv dir — contains Scripts/python.exe on Windows)
-      4. PATH — but skip Windows Store stubs (WindowsApps\python*.exe)
+      4. PATH — but skip Windows Store stubs (WindowsApps\\python*.exe)
       5. sys.executable as last resort
     """
     prefixes = [sys.base_exec_prefix, sys.exec_prefix]
