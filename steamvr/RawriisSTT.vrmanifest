@@ -11,7 +11,7 @@
       "is_dashboard_overlay": false,
       "strings": {
         "en_us": {
-          "name":        "RawriisSTT",
+          "name":        "RawriisSTT v2",
           "description": "Speech-to-text bridge for VRChat"
         }
       }

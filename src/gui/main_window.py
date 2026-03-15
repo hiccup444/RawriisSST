@@ -2090,6 +2090,7 @@ class MainWindow(QMainWindow):
 
         self._steamvr_manager = SteamVRInputManager(
             action_manifest_path=manifest_path,
+            vrmanifest_path=vrmanifest_path,
             on_ptt_press=lambda: self._steamvr_ptt_press_signal.emit(),
             on_ptt_release=lambda: self._steamvr_ptt_release_signal.emit(),
             on_stop_tts=lambda: self._steamvr_stop_signal.emit(),

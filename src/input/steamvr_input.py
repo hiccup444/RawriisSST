@@ -52,16 +52,18 @@ def register_manifest(vrmanifest_path: str, action_manifest_path: str) -> None:
     Safe to call on every launch — vrpathreg is idempotent.
     Silently skipped if vrpathreg cannot be found.
     """
+    _patch_action_manifest(action_manifest_path)
     import json as _json
     mf = Path(vrmanifest_path)
     mf_dir = mf.parent
 
-    # When frozen by PyInstaller 6+, vrmanifest is in _internal/ (mf_dir),
-    # but the exe lives one level up (mf_dir.parent).  In dev mode they're the same.
+    # When frozen by PyInstaller 6+, the exe is at dist/RawriisSTT/RawriisSTT.exe
+    # and _internal/ is a sibling of the exe.  sys.executable gives us the correct dir.
+    # In dev mode the exe_dir is the steamvr/ folder (sibling of assets/).
     if getattr(sys, "frozen", False):
-        exe_dir = mf_dir.parent
+        exe_dir = Path(sys.executable).parent
     else:
-        exe_dir = mf_dir
+        exe_dir = mf_dir.parent
 
     try:
         data = _json.loads(mf.read_text(encoding="utf-8"))
@@ -78,17 +80,20 @@ def register_manifest(vrmanifest_path: str, action_manifest_path: str) -> None:
                     import shutil as _shutil
                     try:
                         _shutil.copy2(str(src_icon), str(dst_icon))
-                        logger.debug("Copied icon to exe dir: %s", dst_icon)
+                        logger.info("Copied icon to exe dir: %s", dst_icon)
                     except Exception as _ie:
-                        logger.debug("Could not copy icon: %s", _ie)
-                app["image_path"] = str(dst_icon if dst_icon.exists() else src_icon)
+                        logger.warning("Could not copy icon: %s", _ie)
+                final_icon = dst_icon if dst_icon.exists() else src_icon
+                app["image_path"] = str(final_icon)
+                logger.info("SteamVR image_path set to: %s (exists=%s)", final_icon, final_icon.exists())
             # Make binary paths absolute so SteamVR can launch the app
             for key, name in (("binary_path_windows", "RawriisSTT.exe"),
                                ("binary_path_linux",   "RawriisSTT")):
                 if key in app and not Path(app[key]).is_absolute():
                     app[key] = str(exe_dir / name)
+            logger.info("SteamVR exe dir resolved to: %s", exe_dir)
         mf.write_text(_json.dumps(data, indent=2), encoding="utf-8")
-        logger.debug("Patched vrmanifest paths to absolute")
+        logger.info("Patched vrmanifest written")
     except Exception as exc:
         logger.warning("Could not patch vrmanifest: %s", exc)
 
@@ -115,6 +120,34 @@ def register_manifest(vrmanifest_path: str, action_manifest_path: str) -> None:
             )
     except (OSError, subprocess.TimeoutExpired) as exc:
         logger.warning("vrpathreg failed: %s", exc)
+
+
+def _patch_action_manifest(action_manifest_path: str) -> None:
+    """Rewrite binding_url entries in actions.json to absolute paths.
+
+    SteamVR resolves relative binding_url paths against the process working
+    directory, not the manifest file location.  When running as a PyInstaller
+    exe the manifest lives in _internal/steamvr/ but the CWD is the exe dir,
+    so relative paths silently fail to load, leaving all actions with no
+    bindings and bActive=False forever.
+    """
+    import json as _json
+    mf = Path(action_manifest_path)
+    mf_dir = mf.parent
+    try:
+        data = _json.loads(mf.read_text(encoding="utf-8"))
+        changed = False
+        for entry in data.get("default_bindings", []):
+            url = entry.get("binding_url", "")
+            if url and not Path(url).is_absolute():
+                abs_url = str(mf_dir / url)
+                entry["binding_url"] = abs_url
+                changed = True
+        if changed:
+            mf.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+            logger.info("Patched action manifest binding_url paths to absolute")
+    except Exception as exc:
+        logger.warning("Could not patch action manifest: %s", exc)
 
 
 def _find_vrpathreg() -> Optional[str]:
@@ -154,6 +187,50 @@ def _find_vrpathreg() -> Optional[str]:
     return shutil.which("vrpathreg")
 
 
+def _is_steamvr_running() -> bool:
+    """Return True if the SteamVR server process is currently running."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            # Use EnumProcesses via psapi to avoid spawning any console window
+            TH32CS_SNAPPROCESS = 0x00000002
+            import ctypes.wintypes as wt
+            class PROCESSENTRY32(ctypes.Structure):
+                _fields_ = [
+                    ("dwSize",              wt.DWORD),
+                    ("cntUsage",            wt.DWORD),
+                    ("th32ProcessID",       wt.DWORD),
+                    ("th32DefaultHeapID",   ctypes.POINTER(ctypes.c_ulong)),
+                    ("th32ModuleID",        wt.DWORD),
+                    ("cntThreads",          wt.DWORD),
+                    ("th32ParentProcessID", wt.DWORD),
+                    ("pcPriClassBase",      ctypes.c_long),
+                    ("dwFlags",             wt.DWORD),
+                    ("szExeFile",           ctypes.c_char * 260),
+                ]
+            snap = ctypes.windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+            if snap == ctypes.c_void_p(-1).value:
+                return False
+            entry = PROCESSENTRY32()
+            entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
+            found = False
+            if ctypes.windll.kernel32.Process32First(snap, ctypes.byref(entry)):
+                while True:
+                    if entry.szExeFile.lower() == b"vrserver.exe":
+                        found = True
+                        break
+                    if not ctypes.windll.kernel32.Process32Next(snap, ctypes.byref(entry)):
+                        break
+            ctypes.windll.kernel32.CloseHandle(snap)
+            return found
+        else:
+            import subprocess as _sp
+            result = _sp.run(["pgrep", "-x", "vrserver"], capture_output=True, timeout=3)
+            return result.returncode == 0
+    except Exception:
+        return False
+
+
 # ──────────────────────────────────────────────── SteamVRInputManager class ──
 
 class SteamVRInputManager:
@@ -166,6 +243,7 @@ class SteamVRInputManager:
     def __init__(
         self,
         action_manifest_path: str,
+        vrmanifest_path: str,
         on_ptt_press: Callable[[], None],
         on_ptt_release: Callable[[], None],
         on_stop_tts: Callable[[], None],
@@ -173,6 +251,7 @@ class SteamVRInputManager:
         ptt_mode: str,
     ) -> None:
         self._action_manifest = action_manifest_path
+        self._vrmanifest_path = vrmanifest_path
         self._on_ptt_press    = on_ptt_press
         self._on_ptt_release  = on_ptt_release
         self._on_stop_tts     = on_stop_tts
@@ -242,22 +321,50 @@ class SteamVRInputManager:
                 self._import_warned = True
             return None
 
-        try:
-            openvr.init(openvr.VRApplication_Background)
-        except openvr.OpenVRError as exc:
-            logger.debug("OpenVR init failed (SteamVR probably not running): %s %r", exc, exc)
+        if not _is_steamvr_running():
             return None
 
         try:
+            openvr.init(openvr.VRApplication_Background)
+        except openvr.OpenVRError as exc:
+            logger.debug("OpenVR init failed: %s %r", exc, exc)
+            return None
+
+        # Register our manifest directly in the running SteamVR session.
+        # This overrides any stale registration that vrpathreg may have left
+        # from a previous install location.
+        try:
+            openvr.VRApplications().addApplicationManifest(self._vrmanifest_path, False)
+            logger.info("App manifest registered in session: %s", self._vrmanifest_path)
+        except Exception as exc:
+            logger.warning("addApplicationManifest failed: %s", exc)
+
+        # Identify this process as our registered app key so SteamVR applies
+        # the correct saved bindings. Required for VRApplication_Background apps
+        # that don't have a window for SteamVR to match against automatically.
+        try:
+            import os as _os
+            openvr.VRApplications().identifyApplication(_os.getpid(), "com.rawrii.rawriisstt")
+            logger.info("Identified process %d as com.rawrii.rawriisstt", _os.getpid())
+        except Exception as exc:
+            logger.warning("identifyApplication failed: %s", exc)
+
+        try:
             vrinput = openvr.VRInput()
-            vrinput.setActionManifestPath(self._action_manifest)
+            err = vrinput.setActionManifestPath(self._action_manifest)
+            if err:
+                logger.warning("setActionManifestPath error %s — aborting (path=%s)", err, self._action_manifest)
+                openvr.shutdown()
+                return None
+            logger.info("setActionManifestPath OK: %s", self._action_manifest)
 
             self._action_set_handle = vrinput.getActionSetHandle(ACTION_SET)
             self._h_ptt    = vrinput.getActionHandle(ACT_PTT)
             self._h_stop   = vrinput.getActionHandle(ACT_STOP_TTS)
             self._h_repeat = vrinput.getActionHandle(ACT_REPEAT)
 
-            logger.debug("Action handles loaded OK")
+            logger.info("Action handles: ptt=%s stop=%s repeat=%s set=%s",
+                        self._h_ptt, self._h_stop, self._h_repeat, self._action_set_handle)
             return openvr
         except Exception as exc:
             logger.warning("Failed to load action handles: %s", exc)
@@ -272,17 +379,23 @@ class SteamVRInputManager:
         vrsystem  = openvr.VRSystem()
         event     = openvr.VREvent_t()
 
-        active_action_set = openvr.VRActiveActionSet_t()
-        active_action_set.ulActionSet = self._action_set_handle
+        # Build a ctypes array of VRActiveActionSet_t — the API requires a pointer
+        # to a C array, not a Python list.  Passing a plain list causes the struct
+        # size to be computed incorrectly, which silently keeps bActive=False.
+        ActiveSets = openvr.VRActiveActionSet_t * 1
+        active_sets = ActiveSets()
+        active_sets[0].ulActionSet = self._action_set_handle
+        active_sets[0].ulRestrictedToDevice = openvr.k_ulInvalidInputValueHandle
+        active_sets[0].nPriority = 0
 
-        # Per-action previous-state trackers (used to detect transitions ourselves
-        # as a fallback; bChanged in the data struct is authoritative when available)
+        # Per-action previous-state trackers
         _prev: dict[int, bool] = {
             self._h_ptt:    False,
             self._h_stop:   False,
             self._h_repeat: False,
         }
 
+        _last_active = None
         while not self._stop_event.is_set():
             # Check for VREvent_Quit
             while vrsystem.pollNextEvent(event):
@@ -291,33 +404,49 @@ class SteamVRInputManager:
                     return
 
             try:
-                vrinput.updateActionState([active_action_set])
+                vrinput.updateActionState(active_sets)
             except openvr.OpenVRError as exc:
                 logger.warning("updateActionState failed: %s", exc)
                 return
 
-            # Read each digital action and fire on transitions
-            for handle, prev_key, fire_fn in (
-                (self._h_ptt,    self._h_ptt,    self._handle_ptt),
-                (self._h_stop,   self._h_stop,   self._handle_stop_tts),
-                (self._h_repeat, self._h_repeat, self._handle_repeat_tts),
+            try:
+                ptt_data = vrinput.getDigitalActionData(
+                    self._h_ptt, openvr.k_ulInvalidInputValueHandle
+                )
+                active_now = bool(ptt_data.bActive)
+                if active_now != _last_active:
+                    logger.info("SteamVR PTT bActive changed: %s (bState=%s)",
+                                active_now, bool(ptt_data.bState))
+                    _last_active = active_now
+            except Exception:
+                pass
+
+            for handle, action_name, fire_fn in (
+                (self._h_ptt,    "push_to_talk", self._handle_ptt),
+                (self._h_stop,   "stop_tts",     self._handle_stop_tts),
+                (self._h_repeat, "repeat_tts",   self._handle_repeat_tts),
             ):
                 try:
-                    data = vrinput.getDigitalActionData(handle, openvr.k_ulInvalidInputValueHandle)
+                    data = vrinput.getDigitalActionData(
+                        handle, openvr.k_ulInvalidInputValueHandle
+                    )
                 except openvr.OpenVRError:
                     continue
 
                 state = bool(data.bState)
                 changed = bool(data.bChanged)
 
-                # Use bChanged from OpenVR when available; fall back to manual edge detection
                 if changed:
+                    if state:
+                        logger.info("SteamVR: %s pressed", action_name)
                     fire_fn(state)
                 else:
-                    prev = _prev[prev_key]
+                    prev = _prev[handle]
                     if state != prev:
+                        if state:
+                            logger.info("SteamVR: %s pressed (edge detect)", action_name)
                         fire_fn(state)
-                _prev[prev_key] = state
+                _prev[handle] = state
 
             time.sleep(POLL_INTERVAL)
 

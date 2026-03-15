@@ -1,13 +1,16 @@
 {
-  "name": "RawriisSTT defaults — HTC Vive Controller",
   "controller_type": "vive_controller",
-  "description": "Default bindings. Customize in SteamVR > Settings > Controllers > Manage Bindings.",
+  "name": "RawriisSTT - HTC Vive",
+  "description": "Default bindings",
   "bindings": {
     "/actions/main": {
-      "button_click": [
+      "sources": [
         {
-          "output": "/actions/main/in/push_to_talk",
-          "input":  "/user/hand/right/input/trigger/click"
+          "path": "/user/hand/right/input/trigger",
+          "mode": "button",
+          "inputs": {
+            "click": { "output": "/actions/main/in/push_to_talk" }
+          }
         }
       ]
     }

@@ -1,13 +1,16 @@
 {
-  "name": "RawriisSTT defaults — Valve Index (Knuckles)",
   "controller_type": "knuckles",
-  "description": "Default bindings. Customize in SteamVR > Settings > Controllers > Manage Bindings.",
+  "name": "RawriisSTT - Valve Index",
+  "description": "Default bindings",
   "bindings": {
     "/actions/main": {
-      "button_click": [
+      "sources": [
         {
-          "output": "/actions/main/in/push_to_talk",
-          "input":  "/user/hand/right/input/a/click"
+          "path": "/user/hand/right/input/a",
+          "mode": "button",
+          "inputs": {
+            "click": { "output": "/actions/main/in/push_to_talk" }
+          }
         }
       ]
     }
