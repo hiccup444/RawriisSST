@@ -23,9 +23,26 @@ from PyQt6.QtWidgets import (
 )
 
 import logging as _logging
+import sys as _sys
 _sdlog = _logging.getLogger(__name__)
 
 from ..config.settings import AppSettings, save_settings
+
+
+def _is_cuda_available() -> bool:
+    """Return True if a CUDA-capable device is accessible to ctranslate2/faster-whisper."""
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        pass
+    # Fallback: probe for the CUDA runtime library directly
+    try:
+        import ctypes
+        ctypes.cdll.LoadLibrary("nvcuda.dll" if _sys.platform == "win32" else "libcuda.so.1")
+        return True
+    except OSError:
+        return False
 
 
 class SettingsDialog(QDialog):
@@ -140,8 +157,16 @@ class SettingsDialog(QDialog):
         device_row.addWidget(QLabel("Compute device:"))
         self._whisper_device = QComboBox()
         self._whisper_device.addItems(["cpu", "cuda"])
-        self._whisper_device.setCurrentText(self.settings.whisper_device)
         self._whisper_device.setFixedWidth(80)
+        cuda_ok = _is_cuda_available()
+        if not cuda_ok:
+            cuda_item = self._whisper_device.model().item(1)
+            cuda_item.setEnabled(False)
+            cuda_item.setToolTip("CUDA not available — requires an NVIDIA GPU and CUDA toolkit")
+        saved_device = self.settings.whisper_device
+        self._whisper_device.setCurrentText(
+            saved_device if cuda_ok or saved_device != "cuda" else "cpu"
+        )
         device_row.addWidget(self._whisper_device)
         device_row.addStretch()
         wf.addLayout(device_row)

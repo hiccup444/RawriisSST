@@ -388,13 +388,6 @@ class SteamVRInputManager:
         active_sets[0].ulRestrictedToDevice = openvr.k_ulInvalidInputValueHandle
         active_sets[0].nPriority = 0
 
-        # Per-action previous-state trackers
-        _prev: dict[int, bool] = {
-            self._h_ptt:    False,
-            self._h_stop:   False,
-            self._h_repeat: False,
-        }
-
         _last_active = None
         while not self._stop_event.is_set():
             # Check for VREvent_Quit
@@ -409,6 +402,7 @@ class SteamVRInputManager:
                 logger.warning("updateActionState failed: %s", exc)
                 return
 
+            # PTT — "constant" pattern: bChanged detects transitions, bState gives direction
             try:
                 ptt_data = vrinput.getDigitalActionData(
                     self._h_ptt, openvr.k_ulInvalidInputValueHandle
@@ -418,13 +412,17 @@ class SteamVRInputManager:
                     logger.info("SteamVR PTT bActive changed: %s (bState=%s)",
                                 active_now, bool(ptt_data.bState))
                     _last_active = active_now
-            except Exception:
+                if ptt_data.bChanged:
+                    state = bool(ptt_data.bState)
+                    logger.info("SteamVR: push_to_talk %s", "pressed" if state else "released")
+                    self._handle_ptt(state)
+            except openvr.OpenVRError:
                 pass
 
+            # stop_tts / repeat_tts — "once" pattern: bState && bChanged (press only)
             for handle, action_name, fire_fn in (
-                (self._h_ptt,    "push_to_talk", self._handle_ptt),
-                (self._h_stop,   "stop_tts",     self._handle_stop_tts),
-                (self._h_repeat, "repeat_tts",   self._handle_repeat_tts),
+                (self._h_stop,   "stop_tts",   self._handle_stop_tts),
+                (self._h_repeat, "repeat_tts", self._handle_repeat_tts),
             ):
                 try:
                     data = vrinput.getDigitalActionData(
@@ -432,21 +430,9 @@ class SteamVRInputManager:
                     )
                 except openvr.OpenVRError:
                     continue
-
-                state = bool(data.bState)
-                changed = bool(data.bChanged)
-
-                if changed:
-                    if state:
-                        logger.info("SteamVR: %s pressed", action_name)
-                    fire_fn(state)
-                else:
-                    prev = _prev[handle]
-                    if state != prev:
-                        if state:
-                            logger.info("SteamVR: %s pressed (edge detect)", action_name)
-                        fire_fn(state)
-                _prev[handle] = state
+                if data.bState and data.bChanged:
+                    logger.info("SteamVR: %s pressed", action_name)
+                    fire_fn(True)
 
             time.sleep(POLL_INTERVAL)
 
