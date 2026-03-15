@@ -30,7 +30,6 @@ RawriisSTT listens to your microphone and sends your speech to the VRChat chatbo
 | [STT & TTS Engines](docs/engines.md) | Per-engine setup for Whisper, Azure, Vosk, ElevenLabs, Polly |
 | [Custom ElevenLabs Voices](docs/voices.md) | Creating and cloning voices on ElevenLabs to use in the app |
 | [SteamVR Bindings](docs/steamvr.md) | Binding controller buttons to push-to-talk |
-| [Running from Source](docs/from-source.md) | Run the latest code directly without a release build |
 | [Building from Source](docs/building.md) | Compiling your own exe |
 
 ---
