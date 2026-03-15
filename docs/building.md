@@ -41,7 +41,7 @@ bash build/build_linux.sh
 
 This script:
 1. Installs `pyinstaller`, `pillow`, and `openvr` via pip.
-2. Runs PyInstaller with `build/windows.spec` (the spec works cross-platform).
+2. Runs PyInstaller with `build/windows.spec` (this same spec file is used for both Windows and Linux - there is no separate Linux spec).
 3. Outputs the build to `dist/RawriisSTT/RawriisSTT`.
 
 ---

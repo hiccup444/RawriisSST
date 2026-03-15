@@ -63,9 +63,9 @@ Fully offline, lightweight speech recognition. Smaller models than Whisper, lowe
 
 ### System STT
 
-Uses your operating system's built-in speech recognition (Windows Speech Recognition on Windows, or the Google Speech API via the `SpeechRecognition` library).
+Uses the `SpeechRecognition` library, which sends audio to the **Google Web Speech API** by default. Requires an internet connection.
 
-No setup required - select **System STT** on the main window and click **Start Recording**. Windows may prompt you to set up speech recognition on first use.
+No setup required - select **System STT** on the main window and click **Start Recording**.
 
 ---
 
@@ -89,7 +89,9 @@ High-quality AI voices streamed from the ElevenLabs API. Requires an ElevenLabs 
 1. Sign up at [elevenlabs.io](https://elevenlabs.io) and copy your **API Key** from your profile.
 2. Open **Settings → Text-to-Speech** and paste it into the **ElevenLabs API Key** field.
 3. Select **ElevenLabs** as the TTS engine.
-4. Choose a voice from the voice selector.
+4. Click **Refresh** next to the Voice dropdown to load your voice library, then select a voice.
+
+For creating custom or cloned voices and tuning voice parameters, see [Custom ElevenLabs Voices](voices.md).
 
 ---
 

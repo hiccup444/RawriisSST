@@ -73,6 +73,7 @@ Alternatively, add `--enable-sdk-log-levels` to VRChat's launch options in Steam
    - Select your **microphone**.
    - Set your **language** (or leave on Auto).
    - Confirm **Whisper** is selected.
+   - Make sure the **Chatbox** toggle is enabled so transcriptions are sent to VRChat.
 6. Click **Launch Whisper**, then **Start Recording**.
 
 ---

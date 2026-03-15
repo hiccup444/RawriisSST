@@ -27,6 +27,7 @@ RawriisSTT listens to your microphone and sends your speech to the VRChat chatbo
 | [Windows Setup](docs/install-windows.md) | Download, install, and get started on Windows |
 | [Linux Setup](docs/install-linux.md) | Running from source on Linux |
 | [STT & TTS Engines](docs/engines.md) | Per-engine setup for Whisper, Azure, Vosk, ElevenLabs, Polly |
+| [Custom ElevenLabs Voices](docs/voices.md) | Creating and cloning voices on ElevenLabs to use in the app |
 | [SteamVR Bindings](docs/steamvr.md) | Binding controller buttons to push-to-talk |
 | [Building from Source](docs/building.md) | Compiling your own exe |
 
@@ -72,7 +73,7 @@ RawriisSTT listens to your microphone and sends your speech to the VRChat chatbo
 📦 **In-app model downloads**
 - Download Whisper and Vosk models directly from the UI - no manual file management
 
-🎨 **Dark mode UI** built with PyQt6
+🎨 **Themed UI** built with PyQt6 - dark mode or pastel pink light mode, switchable live from Settings
 
 ---
 
