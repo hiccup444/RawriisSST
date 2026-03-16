@@ -32,6 +32,9 @@ Larger models require more VRAM/RAM. `base` or `small` are recommended for most 
 **Language:**
 Set a specific language on the main window to improve accuracy. Leave it on **Auto** to let Whisper detect the language automatically.
 
+**Whisper Device (CPU / CUDA):**
+The **cuda** option is greyed out if a compatible NVIDIA GPU or CUDA toolkit is not detected. If you have a GPU and it isn't being offered, ensure the correct version of PyTorch with CUDA support is installed (see [GPU Acceleration](install-windows.md) / [Linux GPU](install-linux.md)).
+
 ---
 
 ### Azure Speech

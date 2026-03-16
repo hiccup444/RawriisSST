@@ -96,14 +96,32 @@ For AMD GPU support via ROCm, follow the [PyTorch ROCm install guide](https://py
 
 ## VAD & webrtcvad Notes
 
-`webrtcvad` requires a C compiler to build on Linux. If the install fails:
+`webrtcvad` requires a C compiler to build on Linux. If the install fails, the **VAD** input mode option will be greyed out in the app with a tooltip explaining the issue.
+
+To fix it, install build tools and retry:
 
 ```bash
 sudo apt install build-essential  # Debian/Ubuntu
 sudo pacman -S base-devel         # Arch
 ```
 
-Then retry: `pip install webrtcvad`
+```bash
+pip install webrtcvad
+```
+
+Then restart the app — VAD will become selectable once the import succeeds.
+
+---
+
+## TTS Virtual Audio Cable (Linux only)
+
+When TTS is enabled, you may want to route TTS audio to a virtual cable so VRChat hears it rather than your speakers. On Linux, RawriisSTT can create one for you automatically.
+
+In **Settings → Text-to-Speech**, under **Output Cable**, click **Create Virtual Cable**. This creates a PipeWire/PulseAudio null sink called `RawriisCable` and immediately adds it to the output device list. Select it as your TTS output.
+
+**Requirements:** PulseAudio/PipeWire compatibility layer with `pactl` available. This button is hidden on WSL and Windows.
+
+If the cable already exists the button is disabled and a status label confirms it. The cable persists until the next reboot; recreate it by clicking the button again on next launch.
 
 ---
 

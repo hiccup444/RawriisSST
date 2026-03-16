@@ -28,6 +28,23 @@ The binding is saved by SteamVR and will persist between sessions.
 
 ---
 
+## Supported Controllers
+
+Default bindings are included for the following controller types. SteamVR loads the correct binding automatically:
+
+| Controller | Default PTT Button |
+|---|---|
+| Meta Quest (Touch) | Right A |
+| Valve Index (Knuckles) | Right A |
+| HTC Vive | Right trigger |
+| Windows Mixed Reality | Right thumbstick click |
+| HP Reverb G2 | Right thumbstick click |
+| Generic / other | Right trigger |
+
+**Stop TTS** and **Repeat TTS** have no default binding — assign them manually in the SteamVR binding editor if needed.
+
+---
+
 ## Available Actions
 
 | Action | Description |

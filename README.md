@@ -49,6 +49,7 @@ https://github.com/user-attachments/assets/deaae2fa-ed47-4ca5-b076-ed832f73e4df
 - **ElevenLabs** - high-quality AI voices with full parameter control
 - **Amazon Polly** - neural voices via AWS
 - Configurable delay before playback begins
+- **Linux:** one-click virtual audio cable creation (PipeWire/PulseAudio)
 
 💬 **VRChat chatbox integration**
 - Sends transcriptions via OSC to `/chatbox/input`
@@ -57,6 +58,7 @@ https://github.com/user-attachments/assets/deaae2fa-ed47-4ca5-b076-ed832f73e4df
 🎮 **SteamVR controller bindings**
 - Bind push-to-talk to any controller button through the SteamVR input system
 - Works without a headset connected (background app mode)
+- Default bindings for Meta Quest, Valve Index, HTC Vive, WMR, HP Reverb G2, and generic controllers
 
 ⌨️ **Hotkeys**
 - Keyboard push-to-talk (hold or toggle mode)
