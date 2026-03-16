@@ -32,6 +32,11 @@ from PyQt6.QtWidgets import (
 )
 
 from ..audio.devices import AudioDevice, enumerate_all_devices, invalidate_device_cache
+from ..audio.linux_virtual_cable import (
+    is_supported as _vc_supported,
+    exists as _vc_exists,
+    CABLE_NAME as _VC_CABLE_NAME,
+)
 from ..config.settings import AppSettings, save_settings
 from ..osc.vrchat_osc import VRChatOSC
 from ..stt.base import STTEngine, STTResult
@@ -509,6 +514,28 @@ class MainWindow(QMainWindow):
         self._cmb_cable.currentIndexChanged.connect(self._on_cable_changed)
         cable_row.addWidget(self._cmb_cable)
         tts_out_layout.addLayout(cable_row)
+
+        if _vc_supported():
+            self._btn_create_cable = QPushButton("Create Virtual Cable")
+            self._btn_create_cable.setToolTip(
+                "Creates a PipeWire/PulseAudio virtual sink named RawriisCable.\n"
+                "Use this as your Output Cable to route TTS audio into VRChat."
+            )
+            self._lbl_cable_status = QLabel()
+            self._lbl_cable_status.setStyleSheet("color: #888888; font-size: 11px;")
+            if _vc_exists():
+                self._btn_create_cable.setEnabled(False)
+                self._lbl_cable_status.setText("Virtual cable already exists.")
+            self._btn_create_cable.clicked.connect(self._on_create_virtual_cable)
+            cable_btn_row = QHBoxLayout()
+            cable_btn_row.addSpacing(94)
+            cable_btn_row.addWidget(self._btn_create_cable)
+            cable_btn_row.addWidget(self._lbl_cable_status)
+            cable_btn_row.addStretch()
+            tts_out_layout.addLayout(cable_btn_row)
+        else:
+            self._btn_create_cable = None
+            self._lbl_cable_status = None
 
         self._tts_output_widget.setVisible(False)
         cfg_layout.addWidget(self._tts_output_widget)
@@ -1484,6 +1511,24 @@ class MainWindow(QMainWindow):
         text = self._cmb_cable.itemText(index)
         self.settings.tts_cable_device = "" if text == "None" else text
         self._schedule_save()
+
+    @pyqtSlot()
+    def _on_create_virtual_cable(self) -> None:
+        from ..audio.linux_virtual_cable import create as _vc_create
+        self._btn_create_cable.setEnabled(False)
+        try:
+            _vc_create()
+        except Exception as exc:
+            self._btn_create_cable.setEnabled(True)
+            QMessageBox.critical(self, "Virtual Cable Error", str(exc))
+            return
+        if self._lbl_cable_status:
+            self._lbl_cable_status.setText("Virtual cable created.")
+        self._populate_all_devices()
+        for i in range(self._cmb_cable.count()):
+            if _VC_CABLE_NAME in self._cmb_cable.itemText(i):
+                self._cmb_cable.setCurrentIndex(i)
+                break
 
     @pyqtSlot(int)
     def _on_voice_engine_changed(self, index: int) -> None:
