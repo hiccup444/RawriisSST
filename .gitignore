@@ -30,6 +30,7 @@ vosk-model*/
 *.log
 logs/
 
+
 # IDE
 .vscode/
 .idea/
@@ -47,3 +48,6 @@ desktop.ini
 # Secrets
 *.env
 .env*
+*.doc
+*.docx
+*.txt
