@@ -2157,16 +2157,19 @@ class MainWindow(QMainWindow):
     def _on_manual_send(self) -> None:
         text = self._manual_input.text().strip()
         if not text:
+            logger.debug("Manual send: empty input, ignoring.")
             return
+        logger.debug("Manual send: %r", text)
         self._manual_input.clear()
-        self._on_result(text, is_final=True)
+        self._on_result(text, is_final=True, manual=True)
 
     @pyqtSlot(str, bool)
-    def _on_result(self, text: str, is_final: bool) -> None:
+    def _on_result(self, text: str, is_final: bool, manual: bool = False) -> None:
         mode = self.settings.whisper_input_mode
         # Non-Whisper engines produce results continuously; gate them on PTT state.
         # (Whisper already handles PTT gating internally.)
-        if mode != "vad" and self._current_engine_code() != "whisper":
+        # manual=True bypasses this gate — typed sends are never voice-gated.
+        if not manual and mode != "vad" and self._current_engine_code() != "whisper":
             if not self._ptt_active:
                 return
             # Discard results that were recognized before PTT was pressed —
@@ -2196,18 +2199,36 @@ class MainWindow(QMainWindow):
                         self._live_commit_timer.start()
                 else:
                     send_immediately = not self.settings.chatbox_show_keyboard
+                    logger.info(
+                        "OSC chatbox send: text=%r send_immediately=%s play_notification=%s",
+                        text, send_immediately, self.settings.chatbox_play_notification,
+                    )
                     self._osc.send_chatbox(
                         text,
                         send_immediately=send_immediately,
                         play_notification=self.settings.chatbox_play_notification,
                     )
+            else:
+                if manual:
+                    logger.warning(
+                        "Manual send skipped OSC: send_osc=%s use_chatbox=%s",
+                        self.settings.send_osc, self.settings.use_chatbox,
+                    )
 
-            # TTS — speak final transcription through selected output devices (PTT only)
-            if self.settings.tts_enabled and mode != "vad":
+            # TTS — PTT modes only for STT results (avoids mic feedback in VAD);
+            # manual typed sends always fire TTS if enabled.
+            if self.settings.tts_enabled and (manual or mode != "vad"):
                 h_idx = self._cmb_headphones.currentData()  # int or None
                 c_idx = self._cmb_cable.currentData()        # int or None
                 if h_idx is not None or c_idx is not None:
                     tts_engine = self.settings.tts_voice_engine
+                    logger.info(
+                        "TTS firing: engine=%s headphones_idx=%s cable_idx=%s",
+                        tts_engine, h_idx, c_idx,
+                    )
+                else:
+                    if manual:
+                        logger.warning("TTS enabled but no output devices selected — skipping playback.")
                     if tts_engine == "elevenlabs":
                         from ..tts.elevenlabs_tts import speak_text as el_speak
                         el_speak(
