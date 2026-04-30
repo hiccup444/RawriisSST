@@ -1312,6 +1312,8 @@ class MainWindow(QMainWindow):
             self._whisper_engine = WhisperSTT(
                 model_size=wanted_model,
                 device=self.settings.whisper_device,
+                device_index=self.settings.whisper_device_index,
+                suppress_words=self.settings.whisper_suppress_words,
                 vad_enabled=self.settings.vad_enabled,
                 vad_aggressiveness=self.settings.vad_aggressiveness,
                 silence_threshold_ms=self.settings.silence_threshold_ms,

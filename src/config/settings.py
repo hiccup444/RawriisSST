@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass, field
+from typing import List
 from pathlib import Path
 
 
@@ -37,6 +38,8 @@ class AppSettings:
     whisper_model: str = "base"     # tiny | base | small | medium | large
     whisper_language: str = "en"
     whisper_device: str = "cpu"     # cpu | cuda
+    whisper_device_index: int = 0   # CUDA device index (0 = first GPU)
+    whisper_suppress_words: List[str] = field(default_factory=list)  # token-level word suppression
 
     # Azure
     azure_key: str = ""

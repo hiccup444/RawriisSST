@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QComboBox,
+    QPlainTextEdit,
 )
 
 import logging as _logging
@@ -43,6 +44,47 @@ def _is_cuda_available() -> bool:
         return True
     except OSError:
         return False
+
+
+def _get_cuda_device_names() -> list[str]:
+    """Return a list of CUDA device display names, one per GPU.
+
+    Tries nvidia-smi first (works on Windows and Linux without extra deps),
+    then falls back to torch if available, then to generic "GPU N" labels.
+    """
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["nvidia-smi", "--query-gpu=index,name", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            names = []
+            for line in result.stdout.strip().splitlines():
+                parts = line.split(",", 1)
+                if len(parts) == 2:
+                    names.append(f"GPU {parts[0].strip()}: {parts[1].strip()}")
+            if names:
+                return names
+    except Exception:
+        pass
+
+    # Fallback: torch
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return [f"GPU {i}: {torch.cuda.get_device_name(i)}"
+                    for i in range(torch.cuda.device_count())]
+    except Exception:
+        pass
+
+    # Last resort: count from ctranslate2 and use generic labels
+    try:
+        import ctranslate2
+        count = ctranslate2.get_cuda_device_count()
+        return [f"GPU {i}" for i in range(max(count, 1))]
+    except Exception:
+        return ["GPU 0"]
 
 
 class SettingsDialog(QDialog):
@@ -164,11 +206,35 @@ class SettingsDialog(QDialog):
             cuda_item.setEnabled(False)
             cuda_item.setToolTip("CUDA not available — requires an NVIDIA GPU and CUDA toolkit")
         saved_device = self.settings.whisper_device
-        self._whisper_device.setCurrentText(
-            saved_device if cuda_ok or saved_device != "cuda" else "cpu"
-        )
+        effective_device = saved_device if cuda_ok or saved_device != "cuda" else "cpu"
+        self._whisper_device.setCurrentText(effective_device)
         device_row.addWidget(self._whisper_device)
+
+        # GPU selector (only shown/enabled when CUDA is selected)
+        self._gpu_label = QLabel("GPU:")
+        self._gpu_label.setContentsMargins(8, 0, 0, 0)
+        self._whisper_gpu = QComboBox()
+        self._whisper_gpu.setFixedWidth(200)
+        if cuda_ok:
+            gpu_names = _get_cuda_device_names()
+            self._whisper_gpu.addItems(gpu_names)
+            saved_idx = self.settings.whisper_device_index
+            if 0 <= saved_idx < len(gpu_names):
+                self._whisper_gpu.setCurrentIndex(saved_idx)
+        else:
+            self._whisper_gpu.addItem("GPU 0")
+        device_row.addWidget(self._gpu_label)
+        device_row.addWidget(self._whisper_gpu)
         device_row.addStretch()
+
+        # Show GPU selector only when CUDA is selected
+        def _update_gpu_visibility(device_text: str) -> None:
+            visible = device_text == "cuda" and cuda_ok
+            self._gpu_label.setVisible(visible)
+            self._whisper_gpu.setVisible(visible)
+
+        self._whisper_device.currentTextChanged.connect(_update_gpu_visibility)
+        _update_gpu_visibility(effective_device)
         wf.addLayout(device_row)
 
         # Per-model rows
@@ -185,6 +251,25 @@ class SettingsDialog(QDialog):
         self._dl_status.setStyleSheet("color: #aaaaaa; font-size: 11px;")
         self._dl_status.setWordWrap(True)
         wf.addWidget(self._dl_status)
+
+        # Word suppression list
+        suppress_label = QLabel("Banned words / phrases (one per line):")
+        suppress_label.setToolTip(
+            "Words or phrases whose tokens will be suppressed inside Whisper's beam search,\n"
+            "so the model cannot generate them at all — not just stripped after the fact.\n"
+            "Useful for recurring hallucinations (e.g. 'Thanks for watching.').\n"
+            "Takes effect the next time the model is loaded."
+        )
+        wf.addWidget(suppress_label)
+        self._suppress_words = QPlainTextEdit()
+        self._suppress_words.setPlaceholderText(
+            "e.g.\nthanks for watching\nplease subscribe\num\nuh"
+        )
+        self._suppress_words.setFixedHeight(72)
+        self._suppress_words.setPlainText(
+            "\n".join(self.settings.whisper_suppress_words)
+        )
+        wf.addWidget(self._suppress_words)
 
         layout.addWidget(whisper_group)
 
@@ -561,6 +646,11 @@ class SettingsDialog(QDialog):
         # STT
         s.whisper_model = self._selected_whisper_model
         s.whisper_device = self._whisper_device.currentText()
+        s.whisper_device_index = self._whisper_gpu.currentIndex()
+        s.whisper_suppress_words = [
+            w for w in (line.strip() for line in self._suppress_words.toPlainText().splitlines())
+            if w
+        ]
         s.azure_key = self._azure_key.text().strip()
         s.azure_region = self._azure_region.text().strip()
         # Vosk model path is auto-managed; update from cache

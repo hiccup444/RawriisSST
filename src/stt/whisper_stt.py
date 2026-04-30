@@ -120,14 +120,16 @@ def _find_python() -> str:
 
 
 # Inline worker code passed via -c to avoid any file-path / launcher issues.
-# When run as  python -c <_WORKER_CODE> <model_path> <device>
-# sys.argv is   ["-c", model_path, device]
+# When run as  python -c <_WORKER_CODE> <model_path> <device> <device_index> <banned_words_json>
+# sys.argv is   ["-c", model_path, device, device_index, banned_words_json]
 _WORKER_CODE = """\
 import sys, json
 import numpy as np
 from faster_whisper import WhisperModel
 
 mp, dev = sys.argv[1], sys.argv[2]
+device_index = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+banned_words = json.loads(sys.argv[4]) if len(sys.argv) > 4 else []
 
 def _out(obj):
     sys.stdout.buffer.write(json.dumps(obj).encode() + b"\\n")
@@ -135,11 +137,38 @@ def _out(obj):
 
 try:
     compute_type = "float16" if dev == "cuda" else "int8"
-    model = WhisperModel(mp, device=dev, compute_type=compute_type)
-    _out({"status": "loaded"})
+    model = WhisperModel(mp, device=dev, device_index=device_index, compute_type=compute_type)
 except Exception as exc:
     _out({"status": "error", "message": str(exc)})
     raise SystemExit(1)
+
+# Build the suppress-token list from the model's own tokenizer.
+# We encode each banned word with and without a leading space (Whisper BPE
+# typically represents in-sentence words with a leading space, like GPT-2).
+_suppress = [-1]  # -1 keeps the default special-token suppression
+if banned_words:
+    try:
+        tok = model.hf_tokenizer
+        _seen = set()
+        for word in banned_words:
+            word = word.strip()
+            if not word:
+                continue
+            for variant in (word, " " + word, word.lower(), " " + word.lower(),
+                            word.upper(), " " + word.upper(),
+                            word.capitalize(), " " + word.capitalize()):
+                try:
+                    ids = tok.encode(variant, add_special_tokens=False)
+                    for tid in ids:
+                        if tid not in _seen:
+                            _seen.add(tid)
+                            _suppress.append(tid)
+                except Exception:
+                    pass
+    except Exception:
+        pass  # tokenizer unavailable — fall back to default suppression only
+
+_out({"status": "loaded", "suppressed_count": len(_suppress) - 1})
 
 buf = sys.stdin.buffer
 while True:
@@ -159,7 +188,7 @@ while True:
                 language=hdr.get("language") if hdr.get("language") not in (None, "", "auto") else None,
                 beam_size=5,
                 vad_filter=False,
-                suppress_tokens=[-1],
+                suppress_tokens=_suppress,
             )
             text = " ".join(s.text.strip() for s in segs).strip()
             _out({"type": "result", "text": text})
@@ -186,6 +215,8 @@ class WhisperSTT(STTEngine):
         self,
         model_size: str = "base",
         device: str = "cpu",
+        device_index: int = 0,
+        suppress_words: Optional[list] = None,
         vad_enabled: bool = True,
         vad_aggressiveness: int = 2,
         silence_threshold_ms: int = 700,
@@ -196,6 +227,8 @@ class WhisperSTT(STTEngine):
         super().__init__()
         self.model_size = model_size
         self.device = device
+        self.device_index = device_index
+        self.suppress_words: list = suppress_words or []
         self.vad_enabled = vad_enabled
         self.vad_aggressiveness = vad_aggressiveness
         self.silence_threshold_ms = silence_threshold_ms
@@ -245,9 +278,10 @@ class WhisperSTT(STTEngine):
                 f"Whisper model '{self.model_size}' is not downloaded.\n"
                 "Go to Settings → Speech-to-Text and click Download next to the model."
             )
+        device_str = f"{self.device}:{self.device_index}" if self.device == "cuda" else self.device
         logger.info(
             "Loading Whisper model '%s' on %s from %s…",
-            self.model_size, self.device, model_path,
+            self.model_size, device_str, model_path,
         )
 
         kwargs: dict = {}
@@ -258,7 +292,8 @@ class WhisperSTT(STTEngine):
         python_exe = _find_python()
         logger.info("Whisper subprocess python: %s", python_exe)
         self._proc = subprocess.Popen(
-            [python_exe, "-c", _WORKER_CODE, model_path, self.device],
+            [python_exe, "-c", _WORKER_CODE, model_path, self.device,
+             str(self.device_index), json.dumps(self.suppress_words)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -308,7 +343,11 @@ class WhisperSTT(STTEngine):
 
             if msg.get("status") == "loaded":
                 self._is_loaded = True
-                logger.info("Whisper model loaded (subprocess pid=%d).", self._proc.pid)
+                sc = msg.get("suppressed_count", 0)
+                logger.info(
+                    "Whisper model loaded (subprocess pid=%d, suppressed tokens=%d).",
+                    self._proc.pid, sc,
+                )
                 if self.vad_enabled:
                     try:
                         import webrtcvad
