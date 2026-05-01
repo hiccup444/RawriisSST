@@ -180,6 +180,7 @@ def _speak_worker(
 
         # Pre-query devices and prepare per-device audio
         playback_tasks = []
+        pulse_tasks: list = []
         for device_selector in device_indices:
             try:
                 dev_info = sd.query_devices(device_selector)
@@ -196,16 +197,30 @@ def _speak_worker(
                     play_data = data
                 playback_tasks.append((play_data, samplerate, device_selector))
             except Exception as exc:
+                if isinstance(device_selector, str):
+                    from ..audio.pulse_play import is_supported as _pp_ok
+                    if _pp_ok():
+                        logger.info(
+                            "ElevenLabs: PortAudio cannot reach %r — queuing paplay fallback.",
+                            device_selector,
+                        )
+                        pulse_tasks.append((data, samplerate, device_selector))
+                        continue
                 logger.warning("ElevenLabs device prep failed for device %s: %s", device_selector, exc)
 
         # Play to all devices concurrently
-        threads = [
+        sd_threads = [
             threading.Thread(target=_play_on_device, args=task, daemon=True)
             for task in playback_tasks
         ]
-        for t in threads:
+        pp_threads: list = []
+        if pulse_tasks:
+            from ..audio.pulse_play import play_to_sink_async as _pp_async
+            for pp_task in pulse_tasks:
+                pp_threads.append(_pp_async(*pp_task))
+        for t in sd_threads:
             t.start()
-        for t in threads:
+        for t in sd_threads + pp_threads:
             t.join()
 
     except urllib.error.HTTPError as exc:

@@ -159,12 +159,13 @@ def _speak_worker(
 
         # Pre-match channels for each device
         playback_tasks = []
+        pulse_tasks: list = []
         for device_selector in device_indices:
             try:
                 dev_info = sd.query_devices(device_selector)
                 out_channels = int(dev_info["max_output_channels"])
                 if out_channels < 1:
-                    logger.warning("Device %s has no output channels, skipping.", device_selector)
+                    logger.warning("eSpeak: device %s has no output channels, skipping.", device_selector)
                     continue
                 if audio.shape[1] == 1 and out_channels >= 2:
                     play_data = audio.repeat(2, axis=1)
@@ -174,15 +175,29 @@ def _speak_worker(
                     play_data = audio
                 playback_tasks.append((play_data, rate, device_selector))
             except Exception as exc:
+                if isinstance(device_selector, str):
+                    from ..audio.pulse_play import is_supported as _pp_ok
+                    if _pp_ok():
+                        logger.info(
+                            "eSpeak: PortAudio cannot reach %r — queuing paplay fallback.",
+                            device_selector,
+                        )
+                        pulse_tasks.append((audio, rate, device_selector))
+                        continue
                 logger.warning("eSpeak TTS device prep failed for device %s: %s", device_selector, exc)
 
-        threads = [
+        sd_threads = [
             threading.Thread(target=_play_on_device, args=task, daemon=True)
             for task in playback_tasks
         ]
-        for t in threads:
+        pp_threads: list = []
+        if pulse_tasks:
+            from ..audio.pulse_play import play_to_sink_async as _pp_async
+            for pp_task in pulse_tasks:
+                pp_threads.append(_pp_async(*pp_task))
+        for t in sd_threads:
             t.start()
-        for t in threads:
+        for t in sd_threads + pp_threads:
             t.join()
 
     except Exception as exc:

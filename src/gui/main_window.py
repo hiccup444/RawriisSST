@@ -1039,10 +1039,9 @@ class MainWindow(QMainWindow):
 
         cable_visible = any(_VC_CABLE_NAME.lower() in dev.name.lower() for dev in out_devices)
         if _vc_supported() and _vc_exists() and not cable_visible:
-            # userData=None: cable exists in PipeWire but PortAudio hasn't registered it yet.
-            # TTS routing checks currentData() is not None, so audio won't route until
-            # PortAudio picks up the device and the dropdown is re-populated with a real index.
-            self._cmb_cable.addItem(_VC_CABLE_NAME, userData=None)
+            # PortAudio can't see the PipeWire null sink yet.
+            # Store the sink name as userData so TTS engines can route via paplay instead.
+            self._cmb_cable.addItem(_VC_CABLE_NAME, userData=_VC_CABLE_NAME)
 
         self._restore_combo_selection(self._cmb_device, selected_input, default_index=0)
         self._restore_combo_selection(self._cmb_headphones, selected_headphones, default_index=0)
@@ -1624,9 +1623,9 @@ class MainWindow(QMainWindow):
                 self._btn_create_cable.setEnabled(False)
             if self._lbl_cable_status:
                 selected_data = self._cmb_cable.currentData()
-                if selected_data is None:
+                if isinstance(selected_data, str):
                     self._lbl_cable_status.setText(
-                        "Cable exists in PipeWire but not yet routable. Audio will route once PortAudio detects it."
+                        "Cable exists in PipeWire. Audio routing via paplay (PortAudio fallback)."
                     )
                 else:
                     self._lbl_cable_status.setText("Virtual cable created and detected.")
