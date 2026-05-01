@@ -2226,9 +2226,6 @@ class MainWindow(QMainWindow):
                         "TTS firing: engine=%s headphones_idx=%s cable_idx=%s",
                         tts_engine, h_idx, c_idx,
                     )
-                else:
-                    if manual:
-                        logger.warning("TTS enabled but no output devices selected — skipping playback.")
                     if tts_engine == "elevenlabs":
                         from ..tts.elevenlabs_tts import speak_text as el_speak
                         el_speak(
@@ -2272,6 +2269,9 @@ class MainWindow(QMainWindow):
                             [h_idx, c_idx],
                             volume=self.settings.ptt_sound_volume,
                         )
+                else:
+                    if manual:
+                        logger.warning("TTS enabled but no output devices selected — skipping playback.")
 
             status_text, status_color = self._listening_status()
             self._set_status(status_text, status_color)

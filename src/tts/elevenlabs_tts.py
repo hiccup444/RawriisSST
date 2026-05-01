@@ -164,6 +164,7 @@ def _speak_worker(
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             audio_bytes = resp.read()
+        logger.debug("ElevenLabs: received %d bytes of audio.", len(audio_bytes))
 
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             tmp_path = tmp.name
@@ -175,6 +176,7 @@ def _speak_worker(
             return
         if data.ndim == 1:
             data = data.reshape(-1, 1)
+        logger.debug("ElevenLabs: decoded audio shape=%s samplerate=%d", data.shape, samplerate)
 
         # Pre-query devices and prepare per-device audio
         playback_tasks = []
@@ -183,7 +185,9 @@ def _speak_worker(
                 dev_info = sd.query_devices(device_selector)
                 out_ch = int(dev_info["max_output_channels"])
                 if out_ch < 1:
+                    logger.warning("ElevenLabs: device %s has no output channels — skipping.", device_selector)
                     continue
+                logger.debug("ElevenLabs: preparing device %s (%r) out_ch=%d", device_selector, dev_info["name"], out_ch)
                 if data.shape[1] == 1 and out_ch >= 2:
                     play_data = data.repeat(2, axis=1)
                 elif data.shape[1] > out_ch:
@@ -205,7 +209,8 @@ def _speak_worker(
             t.join()
 
     except urllib.error.HTTPError as exc:
-        logger.error("ElevenLabs HTTP %s: %s", exc.code, exc.reason)
+        body = exc.read().decode(errors="replace")[:200]
+        logger.error("ElevenLabs HTTP %s: %s — %s", exc.code, exc.reason, body)
     except Exception as exc:
         logger.exception("ElevenLabs TTS error: %s", exc)
     finally:
@@ -235,6 +240,7 @@ def _play_on_device(data, samplerate: int, device_selector: int | str) -> None:
         idx[0] += chunk
 
     try:
+        logger.debug("ElevenLabs: opening output stream on device %s", device_selector)
         with sd.OutputStream(
             samplerate=samplerate,
             channels=data.shape[1],
@@ -244,5 +250,6 @@ def _play_on_device(data, samplerate: int, device_selector: int | str) -> None:
             finished_callback=done.set,
         ):
             done.wait(timeout=len(data) / samplerate + 5.0)
+        logger.debug("ElevenLabs: playback complete on device %s", device_selector)
     except Exception as exc:
         logger.warning("ElevenLabs playback failed on device %s: %s", device_selector, exc)
