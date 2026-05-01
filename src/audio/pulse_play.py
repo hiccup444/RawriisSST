@@ -52,7 +52,7 @@ def play_to_sink(data: np.ndarray, samplerate: int, sink_name: str) -> None:
         sf.write(tmp_path, data, samplerate)
 
         duration = len(data) / max(samplerate, 1)
-        logger.debug("pulse_play: routing to PipeWire sink %r via paplay (%.1fs)", sink_name, duration)
+        logger.info("pulse_play: routing to PipeWire sink %r via paplay (%.1fs)", sink_name, duration)
 
         result = subprocess.run(
             ["paplay", "--device", sink_name, tmp_path],
@@ -73,7 +73,7 @@ def play_to_sink(data: np.ndarray, samplerate: int, sink_name: str) -> None:
                     result.returncode, sink_name, stderr,
                 )
         else:
-            logger.debug("pulse_play: playback complete for sink %r", sink_name)
+            logger.info("pulse_play: playback complete for sink %r", sink_name)
 
     except FileNotFoundError:
         logger.warning(

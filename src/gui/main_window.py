@@ -2158,7 +2158,7 @@ class MainWindow(QMainWindow):
         if not text:
             logger.debug("Manual send: empty input, ignoring.")
             return
-        logger.debug("Manual send: %r", text)
+        logger.info("Manual send: %r", text)
         self._manual_input.clear()
         self._on_result(text, is_final=True, manual=True)
 
